@@ -1,7 +1,5 @@
-fastapi
-uvicorn
-python-multipart
-pillow
-pytesseract
-requests
-python-dotenv
+Flask==2.3.2
+gunicorn==21.2.0
+pytesseract==0.3.10
+pdf2image==1.16.3
+Pillow==10.0.0
