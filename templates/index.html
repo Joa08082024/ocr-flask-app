@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conversor para PDF + OCR</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: radial-gradient(circle at top, #0f0c29, #302b63, #24243e);
+      color: #fff;
+      text-align: center;
+    }
+    h1 {
+      margin: 20px 0;
+      font-size: 2.2em;
+      color: #0ff;
+      text-shadow: 0 0 20px #0ff;
+    }
+    .container {
+      width: 95%;
+      max-width: 900px;
+      margin: auto;
+      background: rgba(0,0,0,0.4);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 0 20px #0ff;
+      margin-bottom: 20px;
+    }
+    input, button, select, textarea {
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      margin: 8px 0;
+      font-size: 1em;
+      width: 100%;
+      background: #111;
+      color: #0ff;
+      border: 1px solid #0ff;
+      box-sizing: border-box;
+    }
+    button {
+      cursor: pointer;
+      background: linear-gradient(90deg, #0ff, #09f);
+      color: #000;
+      font-weight: bold;
+      transition: transform 0.2s;
+    }
+    button:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 15px #0ff;
+    }
+    .status {
+      margin-top: 10px;
+      font-size: 0.95em;
+      color: #9fe;
+    }
+    .preview {
+      margin-top: 12px;
+      max-height: 240px;
+      overflow: auto;
+      border: 1px dashed rgba(0,255,255,0.2);
+      border-radius: 10px;
+      padding: 8px;
+      background: #0a0f1d;
+    }
+    @media (max-width: 768px) {
+      h1 { font-size: 1.8em; }
+      .container { padding: 15px; }
+      input, button, select, textarea { font-size: 0.95em; padding: 10px; }
+    }
+    @media (max-width: 480px) {
+      h1 { font-size: 1.5em; }
+      .container { padding: 12px; }
+      input, button, select, textarea { font-size: 0.9em; padding: 8px; }
+      .preview { max-height: 180px; }
+    }
+  </style>
+
+  <!-- Bibliotecas externas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <h1>Conversor para PDF + OCR</h1>
+
+  <div class="container">
+    <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" />
+    <button onclick="convertToPdf()">Converter Imagem para PDF</button>
+    <button onclick="runOcr()">Transcrever Imagem (OCR)</button>
+    <button onclick="convertWordToPdf()">Converter / Transcrever Word para PDF</button>
+    <button onclick="convertExcelToPdf()">Converter / Transcrever Excel para PDF</button>
+    <select id="ocrLang">
+      <option value="por">Português</option>
+      <option value="eng">Inglês</option>
+      <option value="spa">Espanhol</option>
+    </select>
+    <textarea id="ocrOut" rows="8" placeholder="Texto extraído..."></textarea>
+    <button onclick="copyText()">Copiar texto</button>
+    <button onclick="downloadText()">Baixar .txt</button>
+    <div class="status" id="status"></div>
+    <div class="preview" id="preview"></div>
+  </div>
+
+  <div class="container">
+    <h2>Traduzir Texto</h2>
+    <select id="translateLang">
+      <option value="en">Inglês</option>
+      <option value="el">Grego</option>
+      <option value="pt">Português</option>
+      <option value="he">Hebraico</option>
+      <option value="es">Espanhol</option>
+      <option value="fr">Francês</option>
+      <option value="de">Alemão</option>
+      <option value="it">Italiano</option>
+    </select>
+    <button onclick="translateText()">Traduzir</button>
+    <textarea id="translatedOut" rows="8" placeholder="Texto traduzido..."></textarea>
+    <button onclick="copyTranslatedText()">Copiar tradução</button>
+    <button onclick="downloadTranslatedText()">Baixar Tradução .txt</button>
+  </div>
+
+  <div class="container">
+    <h2>Contribua com o desenvolvimento da ferramenta</h2>
+    <p>Se você deseja apoiar o desenvolvimento do site, você pode fazer uma doação via PIX usando a chave abaixo:</p>
+    <input type="text" id="pixKey" value="86e69550-a398-4fa2-b143-847d8f5ae8f8" readonly />
+    <button onclick="copyPixKey()">Copiar Chave PIX</button>
+    <div class="status" id="pixStatus"></div>
+  </div>
+
+<script>
+const fileInput = document.getElementById('fileInput');
+const statusEl = document.getElementById('status');
+const ocrOutEl = document.getElementById('ocrOut');
+const ocrLangEl = document.getElementById('ocrLang');
+const translatedOutEl = document.getElementById('translatedOut');
+const translateLangEl = document.getElementById('translateLang');
+
+function setStatus(msg) { statusEl.textContent = msg; }
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+// ---------------- Conversão de imagem para PDF ----------------
+async function convertToPdf() {
+  const file = fileInput.files?.[0];
+  if (!file || !file.type.startsWith('image/')) return setStatus('Selecione uma imagem primeiro.');
+  setStatus('Convertendo para PDF...');
+  const jsPDF = window.jspdf.jsPDF;
+  const dataUrl = await new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.onerror = rej;
+    fr.readAsDataURL(file);
+  });
+  const img = new Image();
+  img.src = dataUrl;
+  await img.decode();
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const imgRatio = img.width / img.height;
+  let w = pageW - 20, h = w / imgRatio;
+  if (h > pageH - 20) { h = pageH - 20; w = h * imgRatio; }
+  const x = (pageW - w)/2, y = (pageH - h)/2;
+  pdf.addImage(dataUrl, 'JPEG', x, y, w, h);
+  downloadBlob(pdf.output('blob'), 'imagem_convertida.pdf');
+  setStatus('PDF gerado com sucesso.');
+}
+
+// ---------------- OCR para imagens ----------------
+async function runOcr() {
+  const file = fileInput.files?.[0];
+  if (!file || !file.type.startsWith('image/')) return setStatus('Selecione uma imagem para OCR.');
+  setStatus('Executando OCR...');
+  const lang = ocrLangEl.value || 'por';
+  try {
+    const dataUrl = await new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.onerror = rej;
+      fr.readAsDataURL(file);
+    });
+    const { data } = await Tesseract.recognize(dataUrl, lang, {
+      logger: (m) => setStatus(m.status + ' ' + Math.round((m.progress || 0) * 100) + '%')
+    });
+    ocrOutEl.value = data.text || '';
+    setStatus('OCR concluído.');
+  } catch(e) {
+    console.error(e);
+    setStatus('Erro ao executar OCR.');
+  }
+}
+
+// ---------------- Conversão Word para PDF + extrair texto ----------------
+async function convertWordToPdf() {
+  const file = fileInput.files?.[0];
+  if (!file || !file.name.match(/\.(doc|docx)$/i)) return setStatus('Selecione um arquivo Word válido.');
+  setStatus('Convertendo Word para PDF...');
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    const text = result.value;
+    
+    // Exibir texto extraído
+    ocrOutEl.value = text;
+
+    const jsPDF = window.jspdf.jsPDF;
+    const pdf = new jsPDF();
+    const lines = pdf.splitTextToSize(text, 180);
+    pdf.text(lines, 10, 10);
+    downloadBlob(pdf.output('blob'), file.name.replace(/\.[^/.]+$/, ".pdf"));
+    setStatus('PDF do Word gerado e texto extraído com sucesso.');
+  } catch (e) {
+    console.error(e);
+    setStatus('Erro ao converter Word para PDF.');
+  }
+}
+
+// ---------------- Conversão Excel para PDF + extrair texto ----------------
+async function convertExcelToPdf() {
+  const file = fileInput.files?.[0];
+  if (!file || !file.name.match(/\.(xls|xlsx)$/i)) return setStatus('Selecione um arquivo Excel válido.');
+  setStatus('Convertendo Excel para PDF...');
+  try {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type: 'array' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    
+    // Transformar Excel em texto concatenado
+    const text = json.map(row => row.join(" | ")).join("\n");
+    ocrOutEl.value = text;  // Exibir na textarea
+
+    const jsPDF = window.jspdf.jsPDF;
+    const pdf = new jsPDF();
+    let y = 10;
+    json.forEach(row => {
+      pdf.text(row.join(" | "), 10, y);
+      y += 10;
+      if (y > 280) { pdf.addPage(); y = 10; }
+    });
+    downloadBlob(pdf.output('blob'), file.name.replace(/\.[^/.]+$/, ".pdf"));
+    setStatus('PDF do Excel gerado e texto extraído com sucesso.');
+  } catch (e) {
+    console.error(e);
+    setStatus('Erro ao converter Excel para PDF.');
+  }
+}
+
+// ---------------- Copiar e baixar textos ----------------
+function copyText() { navigator.clipboard.writeText(ocrOutEl.value || ''); setStatus('Texto copiado.'); }
+function downloadText() { downloadBlob(new Blob([ocrOutEl.value || ''], { type: 'text/plain' }), 'ocr.txt'); }
+function copyTranslatedText() { navigator.clipboard.writeText(translatedOutEl.value || ''); setStatus('Tradução copiada.'); }
+function downloadTranslatedText() { downloadBlob(new Blob([translatedOutEl.value || ''], { type: 'text/plain' }), 'traducao.txt'); }
+
+// ---------------- Tradução ----------------
+async function translateText() {
+  const text = ocrOutEl.value.trim();
+  if (!text) { translatedOutEl.value = "Nenhum texto para traduzir."; return; }
+  const CHUNK_SIZE = 500;
+  let translatedText = '';
+  let sourceLang = ocrLangEl.value;
+  if (sourceLang === "por") sourceLang = "pt";
+  if (sourceLang === "eng") sourceLang = "en";
+  if (sourceLang === "spa") sourceLang = "es";
+  const targetLang = translateLangEl.value;
+  setStatus("Traduzindo...");
+  try {
+    for (let i = 0; i < text.length; i += CHUNK_SIZE) {
+      const chunk = text.slice(i, i + CHUNK_SIZE);
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${sourceLang}|${targetLang}`);
+      const data = await res.json();
+      translatedText += data.responseData.translatedText;
+    }
+    translatedOutEl.value = translatedText;
+    setStatus("Tradução concluída.");
+  } catch (e) {
+    console.error(e);
+    translatedOutEl.value = "Erro ao traduzir.";
+    setStatus("Erro ao traduzir.");
+  }
+}
+
+// ---------------- PIX ----------------
+function copyPixKey() {
+  const pixInput = document.getElementById('pixKey');
+  pixInput.select();
+  pixInput.setSelectionRange(0, 99999);
+  navigator.clipboard.writeText(pixInput.value)
+    .then(() => { document.getElementById('pixStatus').textContent = 'Chave PIX copiada para a área de transferência!'; })
+    .catch(() => { document.getElementById('pixStatus').textContent = 'Falha ao copiar a chave PIX.'; });
+}
+</script>
+</body>
+</html>
