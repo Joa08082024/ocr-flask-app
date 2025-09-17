@@ -41,5 +41,8 @@ def upload():
 
     return render_template("index.html", extracted_text=extracted_text)
 
+
+# Rodar app localmente ou no Render
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
